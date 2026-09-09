@@ -458,7 +458,7 @@
   let posts = [];
   let isUnlocked = false;
   let editingIndex = null;
-  let uploadedImageData = null;
+  let compressedImageData = null; // stores the compressed image data
 
   // ================================================================
   // DOM REFS
@@ -506,7 +506,7 @@
   // ================================================================
   // IMAGE COMPRESSION (resize to max 800px width)
   // ================================================================
-  function compressImage(dataUrl, maxWidth = 800, quality = 0.8) {
+  function compressImage(dataUrl, maxWidth = 800, quality = 0.7) {
     return new Promise((resolve) => {
       const img = new Image();
       img.onload = function() {
@@ -595,7 +595,7 @@
   // ================================================================
   // CRUD OPERATIONS
   // ================================================================
-  async function addPost(title, description, content) {
+  function addPost(title, description, content) {
     if (!isUnlocked) {
       showToast('🔒 Unlock first to publish.');
       return false;
@@ -605,26 +605,11 @@
       return false;
     }
 
-    // Compress any embedded base64 images in content
-    let compressedContent = content;
-    const imgRegex = /<img src="(data:image\/[^;]+;base64,[^"]+)"/g;
-    const matches = [...content.matchAll(imgRegex)];
-    for (const match of matches) {
-      const fullTag = match[0];
-      const dataUrl = match[1];
-      try {
-        const compressed = await compressImage(dataUrl, 800, 0.8);
-        compressedContent = compressedContent.replace(fullTag, `<img src="${compressed}"`);
-      } catch (e) {
-        console.warn('Failed to compress image:', e);
-      }
-    }
-
     posts.push({
       id: Date.now(),
       title: title.trim(),
       description: description.trim() || '',
-      content: compressedContent.trim(),
+      content: content.trim(),
       date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })
     });
 
@@ -656,7 +641,7 @@
       return;
     }
     editingIndex = editIndex;
-    uploadedImageData = null;
+    compressedImageData = null;
     imagePreview.style.display = 'none';
     imagePreview.src = '';
     imageUrlInput.value = '';
@@ -684,35 +669,37 @@
     imageUrlInput.value = '';
     imagePreview.style.display = 'none';
     imagePreview.src = '';
-    uploadedImageData = null;
+    compressedImageData = null;
     editingIndex = null;
     publishBtn.textContent = '📝 Publish';
   }
 
   // ================================================================
-  // IMAGE UPLOAD & INSERT
+  // IMAGE UPLOAD & INSERT (FIXED — compresses on upload)
   // ================================================================
   async function handleImageFile(file) {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = async function(e) {
       const dataUrl = e.target.result;
-      // Compress the image before showing preview
       try {
-        const compressed = await compressImage(dataUrl, 800, 0.8);
+        // Compress immediately
+        const compressed = await compressImage(dataUrl, 800, 0.7);
+        compressedImageData = compressed;
         imagePreview.src = compressed;
         imagePreview.style.display = 'block';
-        uploadedImageData = compressed;
         imageUrlInput.value = compressed;
+        showToast('✅ Image compressed and ready to insert!');
       } catch (err) {
         showToast('⚠️ Failed to compress image.');
+        console.error(err);
       }
     };
     reader.readAsDataURL(file);
   }
 
   function insertImageIntoPost() {
-    const url = imageUrlInput.value.trim() || uploadedImageData;
+    const url = imageUrlInput.value.trim() || compressedImageData;
     if (!url) {
       showToast('⚠️ Please upload an image or paste a URL.');
       return;
@@ -725,9 +712,11 @@
     const newPos = cursorPos + imgTag.length;
     postContentInput.setSelectionRange(newPos, newPos);
     showToast('✅ Image inserted!');
+
+    // Clear preview but keep the compressed data for further inserts
     imagePreview.style.display = 'none';
     imagePreview.src = '';
-    uploadedImageData = null;
+    // Don't clear compressedImageData so user can insert again
     imageUrlInput.value = '';
   }
 
@@ -773,7 +762,7 @@
     toast.textContent = msg;
     toast.classList.add('show');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => toast.classList.remove('show'), 2800);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 3000);
   }
 
   // ================================================================
@@ -793,6 +782,8 @@
     if (e.target.files.length > 0) {
       handleImageFile(e.target.files[0]);
     }
+    // Reset the input so the same file can be re-uploaded
+    e.target.value = '';
   });
 
   insertImageBtn.addEventListener('click', insertImageIntoPost);
@@ -832,7 +823,7 @@
   renderPosts();
   lock();
 
-  console.log('[MyBlog Pro] Fixed image compression + description added.');
+  console.log('[MyBlog Pro] Image upload FIXED — compresses on upload.');
 </script>
 </body>
 </html>
